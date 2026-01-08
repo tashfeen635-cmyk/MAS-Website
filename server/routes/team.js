@@ -13,6 +13,7 @@ router.get('/', async (req, res) => {
     res.status(500).json({ message: 'Server error' });
   }
 });
+// OHMY
 
 // Get single team member (public)
 router.get('/:id', async (req, res) => {
