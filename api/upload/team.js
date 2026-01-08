@@ -1,5 +1,4 @@
 const jwt = require('jsonwebtoken');
-const Busboy = require('busboy');
 
 // Auth middleware helper
 const authenticate = (req) => {
@@ -37,65 +36,110 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const busboy = Busboy({ headers: req.headers });
-    let fileData = null;
-    let fileMimeType = null;
-    let fileName = null;
-
-    busboy.on('file', (name, file, info) => {
-      const { filename, encoding, mimeType } = info;
+    // Support both multipart/form-data and JSON with base64
+    const contentType = req.headers['content-type'] || '';
+    
+    if (contentType.includes('application/json')) {
+      // JSON request with base64 data URL
+      const body = typeof req.body === 'string' ? JSON.parse(req.body) : req.body;
+      const { imageData, filename } = body;
       
-      if (name === 'image' && mimeType.startsWith('image/')) {
-        fileMimeType = mimeType;
-        fileName = filename || 'uploaded-image.jpg';
-        const chunks = [];
-        
-        file.on('data', (data) => {
-          chunks.push(data);
-        });
-        
-        file.on('end', () => {
-          fileData = Buffer.concat(chunks);
-        });
-      } else {
-        file.resume(); // Discard non-image files
+      if (!imageData || !imageData.startsWith('data:image/')) {
+        return res.status(400).json({ message: 'Invalid image data' });
       }
-    });
-
-    busboy.on('finish', () => {
-      if (!fileData) {
-        return res.status(400).json({ message: 'No image file uploaded' });
+      
+      // Extract mimetype and base64 data
+      const matches = imageData.match(/^data:image\/([^;]+);base64,(.+)$/);
+      if (!matches) {
+        return res.status(400).json({ message: 'Invalid base64 image format' });
       }
-
-      // Check file size (5MB limit)
-      if (fileData.length > 5 * 1024 * 1024) {
+      
+      const mimetype = `image/${matches[1]}`;
+      const base64Data = matches[2];
+      const buffer = Buffer.from(base64Data, 'base64');
+      
+      // Validate file size (5MB limit)
+      if (buffer.length > 5 * 1024 * 1024) {
         return res.status(400).json({ message: 'File size exceeds 5MB limit' });
       }
-
-      try {
-        // Convert to base64 data URL (Vercel doesn't support persistent file storage)
-        const base64Data = fileData.toString('base64');
-        const dataURL = `data:${fileMimeType};base64,${base64Data}`;
-
-        res.json({
-          message: 'Image uploaded successfully',
-          path: dataURL,
-          filename: fileName
-        });
-      } catch (error) {
-        console.error('Upload processing error:', error);
-        res.status(500).json({ message: 'Server error' });
+      
+      res.json({
+        message: 'Image uploaded successfully',
+        path: imageData, // Return the data URL as-is
+        filename: filename || `upload-${Date.now()}.${matches[1]}`
+      });
+      
+    } else if (contentType.includes('multipart/form-data')) {
+      // Multipart form data - parse manually
+      const chunks = [];
+      let boundary = '';
+      
+      // Get boundary from Content-Type header
+      const boundaryMatch = contentType.match(/boundary=(.+)$/);
+      if (!boundaryMatch) {
+        return res.status(400).json({ message: 'No boundary found in Content-Type' });
       }
-    });
-
-    busboy.on('error', (error) => {
-      console.error('Busboy error:', error);
-      res.status(400).json({ message: 'File upload error' });
-    });
-
-    req.pipe(busboy);
+      boundary = '--' + boundaryMatch[1].trim();
+      
+      // Collect request data
+      req.on('data', chunk => chunks.push(chunk));
+      
+      await new Promise((resolve, reject) => {
+        req.on('end', () => {
+          try {
+            const buffer = Buffer.concat(chunks);
+            const parts = buffer.toString('binary').split(boundary);
+            
+            for (const part of parts) {
+              if (part.includes('Content-Disposition: form-data') && part.includes('name="image"')) {
+                const filenameMatch = part.match(/filename="([^"]+)"/);
+                const contentTypeMatch = part.match(/Content-Type: ([^\r\n]+)/);
+                
+                if (filenameMatch) {
+                  const fileStart = part.indexOf('\r\n\r\n') + 4;
+                  const fileEnd = part.lastIndexOf('\r\n');
+                  const fileBuffer = Buffer.from(part.slice(fileStart, fileEnd), 'binary');
+                  
+                  // Validate file size (5MB limit)
+                  if (fileBuffer.length > 5 * 1024 * 1024) {
+                    return reject(new Error('File size exceeds 5MB limit'));
+                  }
+                  
+                  const mimetype = contentTypeMatch ? contentTypeMatch[1].trim() : 'application/octet-stream';
+                  if (!mimetype.startsWith('image/')) {
+                    return reject(new Error('Only image files are allowed'));
+                  }
+                  
+                  // Convert to base64 data URL
+                  const base64Data = fileBuffer.toString('base64');
+                  const dataURL = `data:${mimetype};base64,${base64Data}`;
+                  
+                  res.json({
+                    message: 'Image uploaded successfully',
+                    path: dataURL,
+                    filename: filenameMatch[1]
+                  });
+                  
+                  return resolve();
+                }
+              }
+            }
+            
+            reject(new Error('No image file found in request'));
+          } catch (error) {
+            reject(error);
+          }
+        });
+        
+        req.on('error', reject);
+      });
+      
+    } else {
+      return res.status(400).json({ message: 'Unsupported Content-Type' });
+    }
+    
   } catch (error) {
     console.error('Upload error:', error);
-    res.status(500).json({ message: 'Server error' });
+    res.status(500).json({ message: error.message || 'Server error' });
   }
 };

@@ -1,23 +1,16 @@
 {
-  "version": 2,
-  "buildCommand": "echo 'No build step required'",
-  "outputDirectory": "public",
-  "routes": [
+  "rewrites": [
     {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "source": "/api/(.*)",
+      "destination": "/api/$1"
     },
     {
-      "src": "/admin",
-      "dest": "/admin/login.html"
+      "source": "/admin",
+      "destination": "/admin/login.html"
     },
     {
-      "src": "/admin/dashboard",
-      "dest": "/admin/dashboard.html"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/$1"
+      "source": "/admin/dashboard",
+      "destination": "/admin/dashboard.html"
     }
   ]
 }

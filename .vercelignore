@@ -5,3 +5,5 @@ node_modules/
 .DS_Store
 server/.env
 .git/
+MAS/**
+!public/**
