@@ -1,0 +1,7 @@
+server/
+MAS/
+node_modules/
+*.log
+.DS_Store
+server/.env
+.git/
