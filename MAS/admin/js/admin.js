@@ -5,11 +5,12 @@ let deleteIndex = null;
 let editModal = null;
 let deleteModal = null;
 let toast = null;
+let loading = false;
 
 // Initialize on page load
-document.addEventListener('DOMContentLoaded', function() {
+document.addEventListener('DOMContentLoaded', async function() {
   // Check authentication
-  checkAuth();
+  await checkAuth();
 
   // Load admin info
   loadAdminInfo();
@@ -20,15 +21,25 @@ document.addEventListener('DOMContentLoaded', function() {
   toast = new bootstrap.Toast(document.getElementById('toast'));
 
   // Load team data
-  teamData = getTeamData();
-  renderTeamGrid();
+  await loadTeamData();
 });
 
 // Check if user is authenticated
-function checkAuth() {
-  const loggedIn = sessionStorage.getItem('adminLoggedIn') === 'true';
+async function checkAuth() {
+  const token = localStorage.getItem('adminToken');
+  
+  if (!token) {
+    window.location.href = 'login.html';
+    return;
+  }
 
-  if (!loggedIn) {
+  try {
+    await authAPI.verify();
+  } catch (error) {
+    // Token invalid, redirect to login
+    localStorage.removeItem('adminToken');
+    sessionStorage.removeItem('adminLoggedIn');
+    sessionStorage.removeItem('adminName');
     window.location.href = 'login.html';
   }
 }
@@ -44,9 +55,24 @@ function loadAdminInfo() {
 
 // Logout function
 function logout() {
+  localStorage.removeItem('adminToken');
   sessionStorage.removeItem('adminLoggedIn');
   sessionStorage.removeItem('adminName');
   window.location.href = 'login.html';
+}
+
+// Load team data from API
+async function loadTeamData() {
+  try {
+    loading = true;
+    teamData = await teamAPI.getAll();
+    renderTeamGrid();
+    loading = false;
+  } catch (error) {
+    loading = false;
+    showToast('Error', 'Failed to load team data: ' + error.message, 'danger');
+    console.error('Load team data error:', error);
+  }
 }
 
 // Toggle sidebar
@@ -68,7 +94,20 @@ function renderTeamGrid() {
 
 // Create team member card HTML
 function createTeamCard(member, index) {
-  const imagePath = member.image.startsWith('assets/') ? '../' + member.image : member.image;
+  // Handle image path - if it starts with /uploads, use full URL, otherwise prepend ../
+  let imagePath;
+  if (member.image.startsWith('/uploads/')) {
+    const baseUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') 
+      ? 'http://localhost:3000'
+      : window.location.origin;
+    imagePath = baseUrl + member.image;
+  } else if (member.image.startsWith('http')) {
+    imagePath = member.image;
+  } else if (member.image.startsWith('assets/')) {
+    imagePath = '../' + member.image;
+  } else {
+    imagePath = member.image;
+  }
 
   return `
     <div class="col-lg-4 col-md-6">
@@ -81,24 +120,24 @@ function createTeamCard(member, index) {
           <p class="position">${member.position}</p>
           <p class="description">${truncateText(member.description, 100)}</p>
           <div class="social-links-preview">
-            <a href="${member.social.twitter}" target="_blank" class="${member.social.twitter === '#' ? 'disabled' : ''}" title="Twitter">
+            <a href="${member.social?.twitter || '#'}" target="_blank" class="${member.social?.twitter === '#' || !member.social?.twitter ? 'disabled' : ''}" title="Twitter">
               <i class="bi bi-twitter"></i>
             </a>
-            <a href="${member.social.facebook}" target="_blank" class="${member.social.facebook === '#' ? 'disabled' : ''}" title="Facebook">
+            <a href="${member.social?.facebook || '#'}" target="_blank" class="${member.social?.facebook === '#' || !member.social?.facebook ? 'disabled' : ''}" title="Facebook">
               <i class="bi bi-facebook"></i>
             </a>
-            <a href="${member.social.instagram}" target="_blank" class="${member.social.instagram === '#' ? 'disabled' : ''}" title="Instagram">
+            <a href="${member.social?.instagram || '#'}" target="_blank" class="${member.social?.instagram === '#' || !member.social?.instagram ? 'disabled' : ''}" title="Instagram">
               <i class="bi bi-instagram"></i>
             </a>
-            <a href="${member.social.linkedin}" target="_blank" class="${member.social.linkedin === '#' ? 'disabled' : ''}" title="LinkedIn">
+            <a href="${member.social?.linkedin || '#'}" target="_blank" class="${member.social?.linkedin === '#' || !member.social?.linkedin ? 'disabled' : ''}" title="LinkedIn">
               <i class="bi bi-linkedin"></i>
             </a>
           </div>
           <div class="team-card-actions">
-            <button class="btn btn-primary btn-sm" onclick="openEditModal(${index})">
+            <button class="btn btn-primary btn-sm" onclick="openEditModal('${member._id}')">
               <i class="bi bi-pencil"></i> Edit
             </button>
-            <button class="btn btn-danger btn-sm" onclick="openDeleteModal(${index})">
+            <button class="btn btn-danger btn-sm" onclick="openDeleteModal('${member._id}')">
               <i class="bi bi-trash"></i> Delete
             </button>
           </div>
@@ -115,18 +154,19 @@ function truncateText(text, maxLength) {
 }
 
 // Open edit modal
-function openEditModal(index) {
-  const member = teamData[index];
+function openEditModal(id) {
+  const member = teamData.find(m => m._id === id);
+  if (!member) return;
 
-  document.getElementById('editIndex').value = index;
+  document.getElementById('editIndex').value = id;
   document.getElementById('editName').value = member.name;
   document.getElementById('editPosition').value = member.position;
   document.getElementById('editDescription').value = member.description;
   document.getElementById('editImage').value = member.image;
-  document.getElementById('editTwitter').value = member.social.twitter === '#' ? '' : member.social.twitter;
-  document.getElementById('editFacebook').value = member.social.facebook === '#' ? '' : member.social.facebook;
-  document.getElementById('editInstagram').value = member.social.instagram === '#' ? '' : member.social.instagram;
-  document.getElementById('editLinkedin').value = member.social.linkedin === '#' ? '' : member.social.linkedin;
+  document.getElementById('editTwitter').value = member.social?.twitter === '#' || !member.social?.twitter ? '' : member.social.twitter;
+  document.getElementById('editFacebook').value = member.social?.facebook === '#' || !member.social?.facebook ? '' : member.social.facebook;
+  document.getElementById('editInstagram').value = member.social?.instagram === '#' || !member.social?.instagram ? '' : member.social.instagram;
+  document.getElementById('editLinkedin').value = member.social?.linkedin === '#' || !member.social?.linkedin ? '' : member.social.linkedin;
 
   // Show image preview
   updateImagePreview(member.image);
@@ -137,11 +177,11 @@ function openEditModal(index) {
 
 // Open add modal
 function openAddModal() {
-  document.getElementById('editIndex').value = '-1';
+  document.getElementById('editIndex').value = '';
   document.getElementById('editName').value = '';
   document.getElementById('editPosition').value = '';
   document.getElementById('editDescription').value = '';
-  document.getElementById('editImage').value = 'assets/img/team/team-new.jpg';
+  document.getElementById('editImage').value = '';
   document.getElementById('editTwitter').value = '';
   document.getElementById('editFacebook').value = '';
   document.getElementById('editInstagram').value = '';
@@ -149,36 +189,75 @@ function openAddModal() {
 
   document.getElementById('imagePreview').innerHTML = '';
   document.getElementById('editModalLabel').textContent = 'Add New Team Member';
+  document.getElementById('imageUpload').value = ''; // Reset file input
   editModal.show();
 }
 
 // Update image preview
 function updateImagePreview(imagePath) {
   const preview = document.getElementById('imagePreview');
-  const fullPath = imagePath.startsWith('assets/') ? '../' + imagePath : imagePath;
-  preview.innerHTML = `<img src="${fullPath}" alt="Preview" onerror="this.parentElement.innerHTML='<p class=\\'text-muted\\'>Image not found</p>'">`;
+  let fullPath;
+  
+  if (imagePath.startsWith('/uploads/')) {
+    // Server uploaded image
+    const baseUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') 
+      ? 'http://localhost:3000'
+      : window.location.origin;
+    fullPath = baseUrl + imagePath;
+  } else if (imagePath.startsWith('http')) {
+    fullPath = imagePath;
+  } else if (imagePath.startsWith('assets/')) {
+    fullPath = '../' + imagePath;
+  } else {
+    fullPath = imagePath;
+  }
+  
+  preview.innerHTML = `<img src="${fullPath}" alt="Preview" style="max-width: 200px; max-height: 200px; border-radius: 8px;" onerror="this.parentElement.innerHTML='<p class=\\'text-muted\\'>Image not found</p>'">`;
 }
 
 // Handle image upload
-function handleImageUpload(event) {
+async function handleImageUpload(event) {
   const file = event.target.files[0];
-  if (file) {
-    const reader = new FileReader();
-    reader.onload = function(e) {
-      // For demo purposes, store as data URL
-      // In production, you would upload to server
-      document.getElementById('editImage').value = e.target.result;
-      document.getElementById('imagePreview').innerHTML = `<img src="${e.target.result}" alt="Preview">`;
-    };
-    reader.readAsDataURL(file);
+  if (!file) return;
+
+  // Validate file type
+  if (!file.type.startsWith('image/')) {
+    showToast('Error', 'Please select an image file', 'danger');
+    return;
+  }
+
+  // Validate file size (5MB)
+  if (file.size > 5 * 1024 * 1024) {
+    showToast('Error', 'Image size must be less than 5MB', 'danger');
+    return;
+  }
+
+  try {
+    // Show loading
+    const preview = document.getElementById('imagePreview');
+    preview.innerHTML = '<div class="spinner-border spinner-border-sm" role="status"><span class="visually-hidden">Uploading...</span></div>';
+
+    // Upload to server
+    const response = await uploadAPI.uploadTeamImage(file);
+    
+    // Update image path
+    document.getElementById('editImage').value = response.path;
+    
+    // Show preview
+    preview.innerHTML = `<img src="${response.path}" alt="Preview" style="max-width: 200px; max-height: 200px; border-radius: 8px;">`;
+    
+    showToast('Success', 'Image uploaded successfully!', 'success');
+  } catch (error) {
+    document.getElementById('imagePreview').innerHTML = '<p class="text-danger">Upload failed</p>';
+    showToast('Error', 'Failed to upload image: ' + error.message, 'danger');
+    console.error('Upload error:', error);
   }
 }
 
 // Save edit
-function saveEdit() {
-  const index = parseInt(document.getElementById('editIndex').value);
+async function saveEdit() {
+  const id = document.getElementById('editIndex').value;
   const memberData = {
-    id: index === -1 ? Date.now() : teamData[index].id,
     name: document.getElementById('editName').value.trim(),
     position: document.getElementById('editPosition').value.trim(),
     description: document.getElementById('editDescription').value.trim(),
@@ -192,58 +271,76 @@ function saveEdit() {
   };
 
   // Validate
-  if (!memberData.name || !memberData.position || !memberData.description) {
+  if (!memberData.name || !memberData.position || !memberData.description || !memberData.image) {
     showToast('Error', 'Please fill in all required fields', 'danger');
     return;
   }
 
-  if (index === -1) {
-    // Add new member
-    teamData.push(memberData);
-    showToast('Success', 'Team member added successfully!', 'success');
-  } else {
-    // Update existing
-    teamData[index] = memberData;
-    showToast('Success', 'Team member updated successfully!', 'success');
-  }
+  try {
+    if (!id) {
+      // Add new member
+      await teamAPI.create(memberData);
+      showToast('Success', 'Team member added successfully!', 'success');
+    } else {
+      // Update existing
+      await teamAPI.update(id, memberData);
+      showToast('Success', 'Team member updated successfully!', 'success');
+    }
 
-  editModal.hide();
-  renderTeamGrid();
+    editModal.hide();
+    await loadTeamData(); // Reload team data
+  } catch (error) {
+    showToast('Error', 'Failed to save: ' + error.message, 'danger');
+    console.error('Save error:', error);
+  }
 }
 
 // Open delete modal
-function openDeleteModal(index) {
-  deleteIndex = index;
-  document.getElementById('deleteConfirmName').textContent = teamData[index].name;
+function openDeleteModal(id) {
+  const member = teamData.find(m => m._id === id);
+  if (!member) return;
+  
+  deleteIndex = id;
+  document.getElementById('deleteConfirmName').textContent = member.name;
   deleteModal.show();
 }
 
 // Confirm delete
-function confirmDelete() {
-  if (deleteIndex !== null) {
-    teamData.splice(deleteIndex, 1);
+async function confirmDelete() {
+  if (!deleteIndex) return;
+
+  try {
+    await teamAPI.delete(deleteIndex);
     deleteModal.hide();
-    renderTeamGrid();
+    await loadTeamData(); // Reload team data
     showToast('Success', 'Team member deleted successfully!', 'success');
+    deleteIndex = null;
+  } catch (error) {
+    showToast('Error', 'Failed to delete: ' + error.message, 'danger');
+    console.error('Delete error:', error);
     deleteIndex = null;
   }
 }
 
-// Save all changes to localStorage
+// Save all changes (already saved individually, just show message)
 function saveAllChanges() {
-  saveTeamData(teamData);
-  showToast('Success', 'All changes saved successfully! Changes will reflect on the website.', 'success');
-
-  // Generate HTML code for user to copy
-  generateTeamHTML();
+  showToast('Success', 'All changes are automatically saved to the database!', 'success');
 }
 
-// Reset to default
-function resetToDefault() {
-  if (confirm('Are you sure you want to reset all team data to default? This cannot be undone.')) {
-    teamData = resetTeamData();
-    renderTeamGrid();
-    showToast('Success', 'Team data reset to default!', 'success');
+// Reset to default (Not implemented - use with caution)
+async function resetToDefault() {
+  if (confirm('Are you sure you want to delete all team members? This cannot be undone. You will need to add them back manually.')) {
+    try {
+      // Delete all team members
+      for (const member of teamData) {
+        await teamAPI.delete(member._id);
+      }
+      await loadTeamData();
+      showToast('Success', 'All team members deleted!', 'success');
+    } catch (error) {
+      showToast('Error', 'Failed to reset: ' + error.message, 'danger');
+      console.error('Reset error:', error);
+    }
   }
 }
 
@@ -291,7 +388,7 @@ function exportData() {
 
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'team-data.json';
+  a.download = `team-data-${new Date().toISOString().split('T')[0]}.json`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);
@@ -399,7 +496,7 @@ function togglePasswordVisibility(inputId, iconId) {
 }
 
 // Change password function
-function changePassword() {
+async function changePassword() {
   const currentPassword = document.getElementById('currentPassword').value;
   const newPassword = document.getElementById('newPassword').value;
   const confirmPassword = document.getElementById('confirmPassword').value;
@@ -410,16 +507,6 @@ function changePassword() {
   // Hide previous messages
   errorDiv.classList.add('d-none');
   successDiv.classList.add('d-none');
-
-  // Get current stored password (from localStorage or default)
-  const storedPassword = localStorage.getItem('masAdminPassword') || 'tashu123';
-
-  // Validate current password
-  if (currentPassword !== storedPassword) {
-    errorText.textContent = 'Current password is incorrect';
-    errorDiv.classList.remove('d-none');
-    return;
-  }
 
   // Validate new password length
   if (newPassword.length < 4) {
@@ -442,15 +529,22 @@ function changePassword() {
     return;
   }
 
-  // Save new password to localStorage
-  localStorage.setItem('masAdminPassword', newPassword);
+  try {
+    // Change password via API
+    await authAPI.changePassword(currentPassword, newPassword);
 
-  // Show success message
-  successDiv.classList.remove('d-none');
+    // Show success message
+    successDiv.classList.remove('d-none');
 
-  // Close modal after 2 seconds
-  setTimeout(() => {
-    changePasswordModal.hide();
-    showToast('Success', 'Password changed successfully!', 'success');
-  }, 1500);
+    // Close modal after 2 seconds
+    setTimeout(() => {
+      changePasswordModal.hide();
+      showToast('Success', 'Password changed successfully!', 'success');
+      // Reset form
+      document.getElementById('changePasswordForm').reset();
+    }, 1500);
+  } catch (error) {
+    errorText.textContent = error.message || 'Failed to change password';
+    errorDiv.classList.remove('d-none');
+  }
 }

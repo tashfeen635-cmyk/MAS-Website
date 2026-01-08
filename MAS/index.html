@@ -364,84 +364,66 @@
 
     <!-- Team Data Script -->
     <script>
-      // Default Team Data (fallback if localStorage is empty)
-      const defaultTeamData = [
-        {
-          id: 1,
-          name: "Maqsood Ahmed Dar",
-          position: "Founder / Chief Executive Officer",
-          description: "Visionary leader driving company growth, strategy, and long-term business excellence.",
-          image: "assets/img/team/team-1.jpg",
-          social: { twitter: "#", facebook: "#", instagram: "#", linkedin: "#" }
-        },
-        {
-          id: 2,
-          name: "Hammad Ahmed Dar",
-          position: "Managing Director",
-          description: "Oversees operations, ensures efficiency, and leads teams to achieve organizational goals.",
-          image: "assets/img/team/team-2.jpg",
-          social: { twitter: "#", facebook: "#", instagram: "#", linkedin: "#" }
-        },
-        {
-          id: 3,
-          name: "Dr Mehfooz Ullah Dar",
-          position: "Consultant",
-          description: "Provides expert advice, strategic insights, and professional guidance for informed decision-making.",
-          image: "assets/img/team/team-3.jpg",
-          social: { twitter: "#", facebook: "#", instagram: "#", linkedin: "#" }
-        },
-        {
-          id: 4,
-          name: "Mehran Ali",
-          position: "Manager",
-          description: "Responsible for team management, workflow coordination, and achieving company targets efficiently.",
-          image: "assets/img/team/team-4.jpg",
-          social: { twitter: "#", facebook: "#", instagram: "#", linkedin: "#" }
-        },
-        {
-          id: 5,
-          name: "M.Ahmed Hussain",
-          position: "Civil Engineer",
-          description: "Certified civil engineer with expertise in construction planning, structural analysis, and site management.",
-          image: "assets/img/team/team-5.jpg",
-          social: { twitter: "#", facebook: "#", instagram: "#", linkedin: "#" }
-        },
-        {
-          id: 6,
-          name: "Muhammad Shoaib",
-          position: "Electrical Engineer",
-          description: "Skilled electrical engineer specializing in electrical design, power systems, installation, maintenance, and energy-efficient solutions.",
-          image: "assets/img/team/team-6.jpg",
-          social: { twitter: "#", facebook: "#", instagram: "#", linkedin: "#" }
-        }
-      ];
+      // Get API base URL - defaults to localhost:3000 if running locally
+      const API_BASE_URL = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') 
+        ? 'http://localhost:3000/api'
+        : `${window.location.protocol}//${window.location.host}/api`;
 
       // Load team data on page load
       document.addEventListener('DOMContentLoaded', function() {
         loadTeamSection();
       });
 
-      function loadTeamSection() {
-        // Get team data from localStorage or use default
-        const storedData = localStorage.getItem('masTeamData');
-        const teamData = storedData ? JSON.parse(storedData) : defaultTeamData;
+      async function loadTeamSection() {
+        const container = document.getElementById('teamContainer');
+        container.innerHTML = '<div class="col-12 text-center"><div class="spinner-border" role="status"><span class="visually-hidden">Loading...</span></div></div>';
 
+        try {
+          // Fetch from API
+          const response = await fetch(`${API_BASE_URL}/team`);
+          if (response.ok) {
+            const teamData = await response.json();
+            if (teamData && teamData.length > 0) {
+              renderTeamMembers(teamData);
+            } else {
+              // No team members found
+              container.innerHTML = '<div class="col-12 text-center"><p class="text-muted">No team members found.</p></div>';
+            }
+          } else {
+            throw new Error('Failed to fetch team data');
+          }
+        } catch (error) {
+          console.error('Failed to fetch team data from API:', error);
+          container.innerHTML = '<div class="col-12 text-center"><p class="text-muted">Unable to load team members. Please try again later.</p></div>';
+        }
+      }
+
+      function renderTeamMembers(teamData) {
         const container = document.getElementById('teamContainer');
         container.innerHTML = '';
 
         teamData.forEach((member, index) => {
           const delay = (index + 1) * 100;
           const isSecondMember = index === 1;
+          
+          // Handle image path
+          let imagePath = member.image;
+          if (imagePath.startsWith('/uploads/')) {
+            const baseUrl = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') 
+              ? 'http://localhost:3000'
+              : window.location.origin;
+            imagePath = baseUrl + imagePath;
+          }
 
           const memberHTML = `
             <div class="col-lg-4 col-md-6 member" data-aos="fade-up" data-aos-delay="${delay}">
               <div class="member-img"${isSecondMember ? ' style="margin-bottom: 42px;"' : ''}>
-                <img ${isSecondMember ? 'style="border-radius: 100%;" ' : ''}src="${member.image}" class="img-fluid" alt="${member.name}">
+                <img ${isSecondMember ? 'style="border-radius: 100%;" ' : ''}src="${imagePath}" class="img-fluid" alt="${member.name}">
                 <div class="social">
-                  <a href="${member.social.twitter}"><i class="bi bi-twitter"></i></a>
-                  <a href="${member.social.facebook}"><i class="bi bi-facebook"></i></a>
-                  <a href="${member.social.instagram}"><i class="bi bi-instagram"></i></a>
-                  <a href="${member.social.linkedin}"><i class="bi bi-linkedin"></i></a>
+                  <a href="${member.social?.twitter || '#'}"><i class="bi bi-twitter"></i></a>
+                  <a href="${member.social?.facebook || '#'}"><i class="bi bi-facebook"></i></a>
+                  <a href="${member.social?.instagram || '#'}"><i class="bi bi-instagram"></i></a>
+                  <a href="${member.social?.linkedin || '#'}"><i class="bi bi-linkedin"></i></a>
                 </div>
               </div>
               <div class="member-info text-center">

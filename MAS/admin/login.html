@@ -167,22 +167,21 @@
   <!-- Bootstrap JS -->
   <script src="../assets/vendor/bootstrap/js/bootstrap.bundle.min.js"></script>
 
+  <!-- API JS -->
+  <script src="js/api.js"></script>
+
   <script>
-    // ============================================
-    // ADMIN CREDENTIALS - Only this can access
-    // ============================================
-    const ADMIN_USERNAME = 'tashu';
-    const DEFAULT_PASSWORD = 'tashu123';
-
-    // Get password from localStorage (if changed) or use default
-    function getAdminPassword() {
-      return localStorage.getItem('masAdminPassword') || DEFAULT_PASSWORD;
-    }
-
     // Check if already logged in
-    document.addEventListener('DOMContentLoaded', function() {
-      if (sessionStorage.getItem('adminLoggedIn') === 'true') {
-        window.location.href = 'dashboard.html';
+    document.addEventListener('DOMContentLoaded', async function() {
+      const token = localStorage.getItem('adminToken');
+      if (token) {
+        try {
+          await authAPI.verify();
+          window.location.href = 'dashboard.html';
+        } catch (error) {
+          // Token invalid, remove it
+          localStorage.removeItem('adminToken');
+        }
       }
     });
 
@@ -203,7 +202,7 @@
     }
 
     // Handle login form submission
-    document.getElementById('loginForm').addEventListener('submit', function(e) {
+    document.getElementById('loginForm').addEventListener('submit', async function(e) {
       e.preventDefault();
 
       const username = document.getElementById('username').value.trim();
@@ -219,37 +218,29 @@
       loginBtn.disabled = true;
       loginBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Logging in...';
 
-      // Simulate small delay for better UX
-      setTimeout(() => {
-        // Check credentials
-        const currentPassword = getAdminPassword();
-        if (username === ADMIN_USERNAME && password === currentPassword) {
-          // Success - Store session
-          sessionStorage.setItem('adminLoggedIn', 'true');
-          sessionStorage.setItem('adminName', 'Tashu');
+      try {
+        // Login via API
+        const response = await authAPI.login(username, password);
+        
+        // Success - Store session
+        sessionStorage.setItem('adminLoggedIn', 'true');
+        sessionStorage.setItem('adminName', response.admin.username);
 
-          // Redirect to dashboard
-          window.location.href = 'dashboard.html';
-        } else {
-          // Failed - Show error
-          if (username !== ADMIN_USERNAME && password !== currentPassword) {
-            errorMessage.textContent = 'Invalid username and password';
-          } else if (username !== ADMIN_USERNAME) {
-            errorMessage.textContent = 'Invalid username';
-          } else {
-            errorMessage.textContent = 'Invalid password';
-          }
-          errorAlert.classList.remove('d-none');
+        // Redirect to dashboard
+        window.location.href = 'dashboard.html';
+      } catch (error) {
+        // Failed - Show error
+        errorMessage.textContent = error.message || 'Invalid username or password';
+        errorAlert.classList.remove('d-none');
 
-          // Reset button
-          loginBtn.disabled = false;
-          loginBtn.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> Login';
+        // Reset button
+        loginBtn.disabled = false;
+        loginBtn.innerHTML = '<i class="bi bi-box-arrow-in-right"></i> Login';
 
-          // Clear password field
-          document.getElementById('password').value = '';
-          document.getElementById('password').focus();
-        }
-      }, 500);
+        // Clear password field
+        document.getElementById('password').value = '';
+        document.getElementById('password').focus();
+      }
     });
 
     // Hide error when user starts typing
